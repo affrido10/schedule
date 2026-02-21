@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Расписание</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700;900&family=Geologica:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #080810;
+  --card:     #111120;
+  --card2:    #181828;
+  --border:   rgba(255,255,255,0.06);
+  --text:     #eeeeff;
+  --sub:      #7777aa;
+  --mon:      #818cf8;
+  --tue:      #f472b6;
+  --wed:      #34d399;
+  --thu:      #fb923c;
+  --fri:      #38bdf8;
+  --sat:      #c084fc;
+  --glow-mon: rgba(129,140,248,0.15);
+  --glow-tue: rgba(244,114,182,0.15);
+  --glow-wed: rgba(52,211,153,0.15);
+  --glow-thu: rgba(251,146,60,0.15);
+  --glow-fri: rgba(56,189,248,0.15);
+  --glow-sat: rgba(192,132,252,0.15);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+body {
+  font-family: 'Geologica', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+/* ── Noise texture overlay ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+/* ── Ambient glow blobs ── */
+.blob {
+  position: fixed; border-radius: 50%;
+  filter: blur(80px); opacity: 0.25;
+  pointer-events: none; z-index: 0;
+}
+.blob-1 { width: 300px; height: 300px; background: #818cf8; top: -80px; left: -60px; }
+.blob-2 { width: 250px; height: 250px; background: #f472b6; bottom: 60px; right: -80px; }
+
+/* ── Layout ── */
+.wrap { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; }
+
+/* ── Header ── */
+.header {
+  padding: 20px 20px 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.logo {
+  font-family: 'Unbounded', sans-serif;
+  font-size: 22px; font-weight: 900;
+  letter-spacing: -1px;
+  background: linear-gradient(120deg, #818cf8 0%, #f472b6 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  line-height: 1;
+}
+.week-label {
+  font-size: 12px; color: var(--sub);
+  font-weight: 500; letter-spacing: 0.2px;
+  padding-left: 2px;
+}
+
+/* ── Group pills ── */
+.section-title {
+  font-family: 'Unbounded', sans-serif;
+  font-size: 9px; font-weight: 700;
+  color: var(--sub); letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 20px 20px 10px;
+}
+.pills-wrap {
+  display: flex; gap: 8px;
+  padding: 0 20px 4px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.pills-wrap::-webkit-scrollbar { display: none; }
+
+.pill {
+  flex-shrink: 0;
+  font-family: 'Unbounded', sans-serif;
+  font-size: 10px; font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 100px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  color: var(--sub);
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(.4,0,.2,1);
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+.pill:hover { color: var(--text); border-color: rgba(255,255,255,0.15); }
+.pill.active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #818cf8, #f472b6);
+  box-shadow: 0 0 20px rgba(129,140,248,0.35);
+}
+
+/* ── Schedule area ── */
+.schedule { padding: 16px 20px 100px; }
+
+/* ── Day block ── */
+.day {
+  margin-bottom: 24px;
+  opacity: 0;
+  transform: translateY(12px);
+  animation: slideUp 0.35s cubic-bezier(.4,0,.2,1) forwards;
+}
+@keyframes slideUp {
+  to { opacity: 1; transform: none; }
+}
+
+.day-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px;
+}
+.day-pill {
+  font-family: 'Unbounded', sans-serif;
+  font-size: 10px; font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 100px;
+  letter-spacing: 0.5px;
+  background: var(--day-glow);
+  color: var(--day-color);
+  border: 1px solid var(--day-color);
+}
+.day-line { flex: 1; height: 1px; background: var(--border); }
+
+/* ── Lesson card ── */
+.lesson {
+  background: var(--card);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--day-color);
+  position: relative; overflow: hidden;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.lesson:active { transform: scale(0.985); }
+.lesson::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at top left, var(--day-glow), transparent 70%);
+  pointer-events: none;
+}
+
+.lesson-top {
+  display: flex; justify-content: space-between;
+  align-items: flex-start; gap: 8px;
+  margin-bottom: 8px;
+}
+.lesson-name {
+  font-size: 14px; font-weight: 600;
+  line-height: 1.35; flex: 1;
+  color: var(--text);
+}
+.lesson-num {
+  font-family: 'Unbounded', sans-serif;
+  font-size: 28px; font-weight: 900;
+  color: var(--day-color);
+  opacity: 0.18; line-height: 1;
+  flex-shrink: 0;
+}
+
+.lesson-meta { display: flex; gap: 14px; flex-wrap: wrap; }
+.meta {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--sub); font-weight: 500;
+}
+.meta svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+/* ── States ── */
+.state {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 80px 20px; gap: 14px; text-align: center;
+}
+.state-icon { font-size: 48px; line-height: 1; }
+.state-msg { font-size: 15px; color: var(--sub); line-height: 1.5; }
+.spinner {
+  width: 40px; height: 40px;
+  border: 3px solid var(--card2);
+  border-top-color: #818cf8;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+
+<div class="wrap">
+  <div class="header">
+    <div class="logo">Расписание</div>
+    <div class="week-label" id="weekLabel">⏳ Загружаем...</div>
+  </div>
+
+  <div class="section-title">Группа</div>
+  <div class="pills-wrap" id="pills"></div>
+
+  <div class="schedule" id="schedule">
+    <div class="state">
+      <div class="spinner"></div>
+      <div class="state-msg">Загружаем данные...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+// ВАЖНО: замени на URL своего Railway сервиса после деплоя
+const API = 'RAILWAY_API_URL_HERE';
+
+// ── Telegram WebApp ───────────────────────────────────────────────────────────
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+// ── Day config ────────────────────────────────────────────────────────────────
+const DAY_MAP = {
+  'понедельник': { color: 'var(--mon)', glow: 'var(--glow-mon)' },
+  'вторник':     { color: 'var(--tue)', glow: 'var(--glow-tue)' },
+  'среда':       { color: 'var(--wed)', glow: 'var(--glow-wed)' },
+  'четверг':     { color: 'var(--thu)', glow: 'var(--glow-thu)' },
+  'пятница':     { color: 'var(--fri)', glow: 'var(--glow-fri)' },
+  'суббота':     { color: 'var(--sat)', glow: 'var(--glow-sat)' },
+};
+
+function getDayStyle(name) {
+  const key = name.toLowerCase().replace(/[^а-я]/g, '');
+  for (const [k, v] of Object.entries(DAY_MAP)) {
+    if (key.includes(k.slice(0,4))) return v;
+  }
+  return { color: 'var(--mon)', glow: 'var(--glow-mon)' };
+}
+
+// ── Load groups ───────────────────────────────────────────────────────────────
+async function loadGroups() {
+  try {
+    const res = await fetch(API + '/api/groups');
+    const data = await res.json();
+    document.getElementById('weekLabel').textContent = '🗓 ' + data.week;
+    renderPills(data.groups);
+    if (data.groups.length) selectGroup(data.groups[0]);
+  } catch(e) {
+    document.getElementById('schedule').innerHTML = `
+      <div class="state">
+        <div class="state-icon">⚠️</div>
+        <div class="state-msg">Не удалось подключиться к серверу.<br>Проверь RAILWAY_API_URL в index.html</div>
+      </div>`;
+  }
+}
+
+function renderPills(groups) {
+  const wrap = document.getElementById('pills');
+  wrap.innerHTML = '';
+  groups.forEach(g => {
+    const el = document.createElement('button');
+    el.className = 'pill';
+    el.textContent = g;
+    el.onclick = () => selectGroup(g);
+    wrap.appendChild(el);
+  });
+}
+
+// ── Select group ──────────────────────────────────────────────────────────────
+async function selectGroup(name) {
+  document.querySelectorAll('.pill').forEach(p => {
+    p.classList.toggle('active', p.textContent === name);
+  });
+  const active = document.querySelector('.pill.active');
+  if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+
+  document.getElementById('schedule').innerHTML = `
+    <div class="state"><div class="spinner"></div></div>`;
+
+  try {
+    const res = await fetch(API + '/api/schedule/' + encodeURIComponent(name));
+    const data = await res.json();
+    renderSchedule(data);
+  } catch(e) {
+    document.getElementById('schedule').innerHTML = `
+      <div class="state">
+        <div class="state-icon">❌</div>
+        <div class="state-msg">Ошибка загрузки расписания</div>
+      </div>`;
+  }
+}
+
+// ── Render schedule ───────────────────────────────────────────────────────────
+function renderSchedule(data) {
+  const el = document.getElementById('schedule');
+
+  if (data.error) {
+    el.innerHTML = `<div class="state">
+      <div class="state-icon">🔍</div>
+      <div class="state-msg">${data.error}</div>
+    </div>`;
+    return;
+  }
+
+  if (!data.days?.length) {
+    el.innerHTML = `<div class="state">
+      <div class="state-icon">😴</div>
+      <div class="state-msg">На этой неделе занятий нет</div>
+    </div>`;
+    return;
+  }
+
+  const clockIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>`;
+  const doorIcon  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 21h18M9 21V5a2 2 0 012-2h2a2 2 0 012 2v16"/></svg>`;
+
+  let html = '';
+  data.days.forEach((day, di) => {
+    const style = getDayStyle(day.name);
+    html += `<div class="day" style="--day-color:${style.color};--day-glow:${style.glow};animation-delay:${di * 60}ms">
+      <div class="day-head">
+        <div class="day-pill">${day.name}</div>
+        <div class="day-line"></div>
+      </div>`;
+
+    day.lessons.forEach(l => {
+      const room = l.room ? `<span class="meta">${doorIcon} ${l.room}</span>` : '';
+      html += `<div class="lesson">
+        <div class="lesson-top">
+          <div class="lesson-name">${l.subject}</div>
+          <div class="lesson-num">${l.num || ''}</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="meta">${clockIcon} ${l.time}</span>
+          ${room}
+        </div>
+      </div>`;
+    });
+
+    html += '</div>';
+  });
+
+  el.innerHTML = html;
+}
+
+loadGroups();
+</script>
+</body>
+</html>
